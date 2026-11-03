@@ -17,9 +17,6 @@
       -webkit-tap-highlight-color: transparent;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
-    .perspective-1000 {
-      perspective: 1000px;
-    }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen">
@@ -56,7 +53,7 @@
       { id: 25, en: "No, I just need a little time.", hiRoman: "Nahi, mujhe bas thoda time chahiye.", hiDeva: "नहीं, मुझे बस थोड़ा टाइम चाहिए।", week: "Week 1", day: "Day 6", category: "Needs (Chahiye)", snoozeUntil: null, masteredCount: 0 }
     ];
 
-    const STORAGE_KEY = "spoken_hindi_flashcard_studio_v1";
+    const STORAGE_KEY = "spoken_hindi_flashcard_studio_v2";
 
     function App() {
       const [cards, setCards] = useState(() => {
@@ -79,6 +76,10 @@
       // 3-Second Pace Timer
       const [paceEnabled, setPaceEnabled] = useState(true);
       const [paceProgress, setPaceProgress] = useState(0);
+
+      // Pronunciation Check State
+      const [isListening, setIsListening] = useState(false);
+      const [speechFeedback, setSpeechFeedback] = useState("");
 
       // Add Card Form
       const [newEn, setNewEn] = useState("");
@@ -121,7 +122,6 @@
 
       const currentCard = activeCards[currentIndex] || null;
 
-      // Handle 3-second pace timer
       useEffect(() => {
         if (!paceEnabled || isFlipped || !currentCard || activeTab !== "practice") {
           setPaceProgress(0);
@@ -148,9 +148,44 @@
         window.speechSynthesis.speak(utter);
       };
 
+      const checkPronunciation = (e) => {
+        e.stopPropagation();
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+          alert("Speech recognition is not supported in this browser. Try Chrome on Android or Safari on iOS/Mac.");
+          return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = "hi-IN";
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        setIsListening(true);
+        setSpeechFeedback("Listening... Speak out loud in Hindi!");
+
+        recognition.onresult = (event) => {
+          const transcript = event.results[0][0].transcript.trim();
+          setIsListening(false);
+          setSpeechFeedback(`You said: "${transcript}" — Great job practicing out loud!`);
+        };
+
+        recognition.onerror = () => {
+          setIsListening(false);
+          setSpeechFeedback("Could not catch audio clearly. Please try again.");
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognition.start();
+      };
+
       const nextCard = () => {
         setIsFlipped(false);
         setShowSnoozeMenu(false);
+        setSpeechFeedback("");
         if (activeCards.length > 0) {
           setCurrentIndex((prev) => (prev + 1) % activeCards.length);
         }
@@ -159,6 +194,7 @@
       const prevCard = () => {
         setIsFlipped(false);
         setShowSnoozeMenu(false);
+        setSpeechFeedback("");
         if (activeCards.length > 0) {
           setCurrentIndex((prev) => (prev - 1 + activeCards.length) % activeCards.length);
         }
@@ -167,6 +203,7 @@
       const shuffleDeck = () => {
         setIsFlipped(false);
         setShowSnoozeMenu(false);
+        setSpeechFeedback("");
         setCards((prev) => [...prev].sort(() => Math.random() - 0.5));
         setCurrentIndex(0);
       };
@@ -175,22 +212,19 @@
         const until = days === "indefinite" ? "indefinite" : nowMs + days * 86400000;
         setCards((prev) =>
           prev.map((c) =>
-            c.id === cardId
-              ? { ...c, snoozeUntil: until, masteredCount: (c.masteredCount || 0) + 1 }
-              : c
+            c.id === cardId ? { ...c, snoozeUntil: until, masteredCount: (c.masteredCount || 0) + 1 } : c
           )
         );
         setIsFlipped(false);
         setShowSnoozeMenu(false);
+        setSpeechFeedback("");
         if (currentIndex >= activeCards.length - 1) {
           setCurrentIndex(0);
         }
       };
 
       const restoreCard = (cardId) => {
-        setCards((prev) =>
-          prev.map((c) => (c.id === cardId ? { ...c, snoozeUntil: null } : c))
-        );
+        setCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, snoozeUntil: null } : c)));
       };
 
       const handleAddSingle = (e) => {
@@ -286,7 +320,6 @@
 
       return (
         <div className="max-w-3xl mx-auto px-4 py-6 pb-20">
-          {/* Header */}
           <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-800 pb-4 mb-6">
             <div>
               <div className="flex items-center gap-2">
@@ -295,113 +328,39 @@
               </div>
               <p className="text-xs sm:text-sm text-slate-400 mt-1">
                 Active Deck: <strong className="text-amber-400">{activeCards.length}</strong> cards · Snoozed Vault: <strong className="text-emerald-400">{snoozedCards.length}</strong> cards
-                {simulatedOffsetDays > 0 && (
-                  <span className="ml-2 text-indigo-400 font-medium">(+{simulatedOffsetDays}d simulated)</span>
-                )}
+                {simulatedOffsetDays > 0 && <span className="ml-2 text-indigo-400 font-medium">(+{simulatedOffsetDays}d simulated)</span>}
               </p>
             </div>
-
-            {/* Backup Controls */}
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={exportJSON}
-                className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition"
-              >
-                Export JSON
-              </button>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition"
-              >
-                Restore JSON
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                onChange={importJSON}
-                className="hidden"
-              />
+              <button onClick={exportJSON} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition">Export JSON</button>
+              <button onClick={() => fileInputRef.current?.click()} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition">Restore JSON</button>
+              <input ref={fileInputRef} type="file" accept=".json" onChange={importJSON} className="hidden" />
             </div>
           </header>
 
-          {statusMsg && (
-            <div className="mb-4 bg-emerald-900/60 border border-emerald-500 text-emerald-200 px-4 py-2 rounded-xl text-sm">
-              {statusMsg}
-            </div>
-          )}
+          {statusMsg && <div className="mb-4 bg-emerald-900/60 border border-emerald-500 text-emerald-200 px-4 py-2 rounded-xl text-sm">{statusMsg}</div>}
 
-          {/* Navigation Tabs */}
           <div className="grid grid-cols-4 gap-2 bg-slate-900 p-1.5 rounded-xl border border-slate-800 mb-6">
-            <button
-              onClick={() => setActiveTab("practice")}
-              className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-medium transition ${
-                activeTab === "practice" ? "bg-amber-500 text-slate-950 font-semibold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              Practice ({activeCards.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("snoozed")}
-              className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-medium transition ${
-                activeTab === "snoozed" ? "bg-amber-500 text-slate-950 font-semibold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              Snoozed ({snoozedCards.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("add")}
-              className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-medium transition ${
-                activeTab === "add" ? "bg-amber-500 text-slate-950 font-semibold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              + Add Cards
-            </button>
-            <button
-              onClick={() => setActiveTab("manage")}
-              className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-medium transition ${
-                activeTab === "manage" ? "bg-amber-500 text-slate-950 font-semibold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              All ({cards.length})
-            </button>
+            <button onClick={() => setActiveTab("practice")} className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-medium transition ${activeTab === "practice" ? "bg-amber-500 text-slate-950 font-semibold" : "text-slate-400 hover:text-white"}`}>Practice ({activeCards.length})</button>
+            <button onClick={() => setActiveTab("snoozed")} className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-medium transition ${activeTab === "snoozed" ? "bg-amber-500 text-slate-950 font-semibold" : "text-slate-400 hover:text-white"}`}>Snoozed ({snoozedCards.length})</button>
+            <button onClick={() => setActiveTab("add")} className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-medium transition ${activeTab === "add" ? "bg-amber-500 text-slate-950 font-semibold" : "text-slate-400 hover:text-white"}`}>+ Add Cards</button>
+            <button onClick={() => setActiveTab("manage")} className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-medium transition ${activeTab === "manage" ? "bg-amber-500 text-slate-950 font-semibold" : "text-slate-400 hover:text-white"}`}>All ({cards.length})</button>
           </div>
 
-          {/* PRACTICE TAB */}
           {activeTab === "practice" && (
             <div>
-              {/* Filters & Pace Toggle */}
               <div className="flex flex-wrap items-center justify-between gap-2 mb-4 bg-slate-900/70 p-3 rounded-xl border border-slate-800/80">
                 <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={selectedWeek}
-                    onChange={(e) => { setSelectedWeek(e.target.value); setCurrentIndex(0); setIsFlipped(false); }}
-                    className="bg-slate-800 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 border border-slate-700"
-                  >
+                  <select value={selectedWeek} onChange={(e) => { setSelectedWeek(e.target.value); setCurrentIndex(0); setIsFlipped(false); }} className="bg-slate-800 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 border border-slate-700">
                     {weeks.map((w) => <option key={w} value={w}>{w === "All" ? "All Weeks" : w}</option>)}
                   </select>
-                  <select
-                    value={selectedCategory}
-                    onChange={(e) => { setSelectedCategory(e.target.value); setCurrentIndex(0); setIsFlipped(false); }}
-                    className="bg-slate-800 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 border border-slate-700"
-                  >
+                  <select value={selectedCategory} onChange={(e) => { setSelectedCategory(e.target.value); setCurrentIndex(0); setIsFlipped(false); }} className="bg-slate-800 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 border border-slate-700">
                     {categories.map((cat) => <option key={cat} value={cat}>{cat === "All" ? "All Categories" : cat}</option>)}
                   </select>
-                  <button
-                    onClick={shuffleDeck}
-                    className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-lg border border-slate-700"
-                  >
-                    Shuffle
-                  </button>
+                  <button onClick={shuffleDeck} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-lg border border-slate-700">Shuffle</button>
                 </div>
-
                 <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={paceEnabled}
-                    onChange={(e) => setPaceEnabled(e.target.checked)}
-                    className="rounded accent-amber-500"
-                  />
+                  <input type="checkbox" checked={paceEnabled} onChange={(e) => setPaceEnabled(e.target.checked)} className="rounded accent-amber-500" />
                   3-Sec Reflex Bar
                 </label>
               </div>
@@ -409,125 +368,68 @@
               {activeCards.length === 0 ? (
                 <div className="text-center py-14 bg-slate-900 rounded-2xl border border-slate-800 p-6">
                   <p className="text-lg font-semibold text-white mb-2">All cards in this filter are snoozed or empty!</p>
-                  <p className="text-sm text-slate-400 mb-4">
-                    Check the Snoozed Vault to restore cards or simulate time forward.
-                  </p>
-                  <button
-                    onClick={() => setActiveTab("snoozed")}
-                    className="bg-amber-500 text-slate-950 font-semibold px-4 py-2 rounded-xl text-sm"
-                  >
-                    Open Snoozed Vault ({snoozedCards.length})
-                  </button>
+                  <button onClick={() => setActiveTab("snoozed")} className="bg-amber-500 text-slate-950 font-semibold px-4 py-2 rounded-xl text-sm">Open Snoozed Vault ({snoozedCards.length})</button>
                 </div>
               ) : (
                 <div>
-                  {/* Flashcard Box */}
-                  <div
-                    onClick={() => setIsFlipped(!isFlipped)}
-                    className="relative cursor-pointer select-none rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border-2 border-slate-700 hover:border-amber-500/60 transition-all p-6 sm:p-10 min-h-[290px] flex flex-col justify-between shadow-2xl"
-                  >
-                    {/* Top Bar inside Card */}
+                  <div onClick={() => setIsFlipped(!isFlipped)} className="relative cursor-pointer select-none rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border-2 border-slate-700 hover:border-amber-500/60 transition-all p-6 sm:p-10 min-h-[310px] flex flex-col justify-between shadow-2xl">
                     <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span className="bg-slate-800 px-2.5 py-1 rounded-md border border-slate-700 text-slate-300">
-                        {currentCard.week} · {currentCard.category}
-                      </span>
-                      <span>
-                        Card {currentIndex + 1} of {activeCards.length}
-                      </span>
+                      <span className="bg-slate-800 px-2.5 py-1 rounded-md border border-slate-700 text-slate-300">{currentCard.week} · {currentCard.category}</span>
+                      <span>Card {currentIndex + 1} of {activeCards.length}</span>
                     </div>
 
-                    {/* 3-Second Reflex Bar */}
                     {paceEnabled && !isFlipped && (
                       <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden my-3">
-                        <div
-                          className={`h-full transition-all duration-75 ${
-                            paceProgress < 75 ? "bg-amber-400" : "bg-rose-500"
-                          }`}
-                          style={{ width: `${paceProgress}%` }}
-                        />
+                        <div className={`h-full transition-all duration-75 ${paceProgress < 75 ? "bg-amber-400" : "bg-rose-500"}`} style={{ width: `${paceProgress}%` }} />
                       </div>
                     )}
 
-                    {/* Center Prompt / Answer */}
                     <div className="my-6 text-center">
                       {!isFlipped ? (
                         <div>
-                          <p className="text-xs uppercase tracking-widest text-amber-400 mb-2 font-semibold">
-                            Speak Out Loud in Hindi
-                          </p>
-                          <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug">
-                            {currentCard.en}
-                          </h2>
-                          {paceProgress >= 100 && (
-                            <p className="text-xs text-rose-400 mt-3 animate-pulse">
-                              3 seconds up — tap card to check!
-                            </p>
-                          )}
+                          <p className="text-xs uppercase tracking-widest text-amber-400 mb-2 font-semibold">Speak Out Loud in Hindi</p>
+                          <h2 className="text-2xl sm:text-3xl font-bold text-white leading-snug">{currentCard.en}</h2>
+                          {paceProgress >= 100 && <p className="text-xs text-rose-400 mt-3 animate-pulse">3 seconds up — tap card to check!</p>}
                         </div>
                       ) : (
                         <div>
-                          <p className="text-xs uppercase tracking-widest text-emerald-400 mb-1 font-semibold">
-                            Spoken Hindi
-                          </p>
-                          <h2 className="text-2xl sm:text-4xl font-extrabold text-amber-300 mb-3">
-                            {currentCard.hiRoman}
-                          </h2>
-                          <p className="text-xl sm:text-2xl text-slate-200 font-medium mb-4">
-                            {currentCard.hiDeva}
-                          </p>
-                          <button
-                            onClick={(e) => speakHindi(currentCard.hiDeva, currentCard.hiRoman, e)}
-                            className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold px-4 py-2 rounded-full border border-slate-600 transition"
-                          >
-                            <span>🔊 Listen (Hindi Audio)</span>
-                          </button>
+                          <p className="text-xs uppercase tracking-widest text-emerald-400 mb-1 font-semibold">Spoken Hindi</p>
+                          <h2 className="text-2xl sm:text-4xl font-extrabold text-amber-300 mb-2">{currentCard.hiRoman}</h2>
+                          <p className="text-xl sm:text-2xl text-slate-200 font-medium mb-3">{currentCard.hiDeva}</p>
+
+                          <div className="flex flex-wrap items-center justify-center gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                            <button onClick={(e) => speakHindi(currentCard.hiDeva, currentCard.hiRoman, e)} className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold px-3.5 py-1.5 rounded-full border border-slate-600 transition">
+                              <span>🔊 Listen</span>
+                            </button>
+                            <button onClick={checkPronunciation} disabled={isListening} className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-full border transition ${isListening ? "bg-rose-950 text-rose-300 border-rose-700 animate-pulse" : "bg-slate-800 hover:bg-slate-700 text-emerald-300 border-slate-600"}`}>
+                              <span>{isListening ? "🎤 Listening..." : "🎤 Check Pronunciation"}</span>
+                            </button>
+                          </div>
+
+                          {speechFeedback && (
+                            <p className="text-xs text-amber-200 mt-2 bg-slate-950/80 p-2 rounded-lg border border-slate-700 text-center max-w-sm mx-auto">
+                              {speechFeedback}
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
 
-                    {/* Footer Hint */}
-                    <div className="text-center text-xs text-slate-500">
-                      {isFlipped ? "Tap anywhere on card to flip back to English" : "Tap anywhere on card to reveal Hindi"}
-                    </div>
+                    <div className="text-center text-xs text-slate-500">{isFlipped ? "Tap anywhere to flip back" : "Tap anywhere to reveal Hindi"}</div>
                   </div>
 
-                  {/* Navigation & Snooze Bar */}
                   <div className="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={prevCard}
-                        className="flex-1 sm:flex-initial bg-slate-800 hover:bg-slate-700 text-white px-5 py-3 rounded-xl font-medium text-sm border border-slate-700 transition"
-                      >
-                        ← Prev
-                      </button>
-                      <button
-                        onClick={() => setIsFlipped(!isFlipped)}
-                        className="flex-1 sm:flex-initial bg-slate-800 hover:bg-slate-700 text-amber-300 px-5 py-3 rounded-xl font-medium text-sm border border-slate-700 transition"
-                      >
-                        {isFlipped ? "Show Front" : "Flip Card"}
-                      </button>
-                      <button
-                        onClick={nextCard}
-                        className="flex-1 sm:flex-initial bg-amber-500 hover:bg-amber-400 text-slate-950 px-6 py-3 rounded-xl font-bold text-sm transition"
-                      >
-                        Next →
-                      </button>
+                      <button onClick={prevCard} className="flex-1 sm:flex-initial bg-slate-800 hover:bg-slate-700 text-white px-5 py-3 rounded-xl font-medium text-sm border border-slate-700 transition">← Prev</button>
+                      <button onClick={() => { setIsFlipped(!isFlipped); setSpeechFeedback(""); }} className="flex-1 sm:flex-initial bg-slate-800 hover:bg-slate-700 text-amber-300 px-5 py-3 rounded-xl font-medium text-sm border border-slate-700 transition">{isFlipped ? "Show Front" : "Flip Card"}</button>
+                      <button onClick={nextCard} className="flex-1 sm:flex-initial bg-amber-500 hover:bg-amber-400 text-slate-950 px-6 py-3 rounded-xl font-bold text-sm transition">Next →</button>
                     </div>
 
-                    {/* Snooze Button */}
                     <div className="relative">
-                      <button
-                        onClick={() => setShowSnoozeMenu(!showSnoozeMenu)}
-                        className="w-full sm:w-auto bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/70 px-4 py-3 rounded-xl text-xs sm:text-sm font-semibold transition"
-                      >
-                        ✓ Comfortable — Hide / Snooze
-                      </button>
-
+                      <button onClick={() => setShowSnoozeMenu(!showSnoozeMenu)} className="w-full sm:w-auto bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/70 px-4 py-3 rounded-xl text-xs sm:text-sm font-semibold transition">✓ Comfortable — Hide / Snooze</button>
                       {showSnoozeMenu && (
                         <div className="absolute right-0 bottom-14 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 z-20">
-                          <p className="text-xs text-slate-400 px-2 py-1 border-b border-slate-800 mb-1">
-                            Bring back to active deck after:
-                          </p>
+                          <p className="text-xs text-slate-400 px-2 py-1 border-b border-slate-800 mb-1">Bring back to active deck after:</p>
                           {[
                             { label: "1 Week (7 days)", days: 7 },
                             { label: "2 Weeks (14 days)", days: 14 },
@@ -535,13 +437,7 @@
                             { label: "1 Month (30 days)", days: 30 },
                             { label: "Hide Indefinitely", days: "indefinite" }
                           ].map((opt) => (
-                            <button
-                              key={opt.label}
-                              onClick={() => snoozeCard(currentCard.id, opt.days)}
-                              className="w-full text-left text-xs sm:text-sm text-slate-200 hover:bg-amber-500 hover:text-slate-950 px-3 py-2 rounded-lg transition font-medium"
-                            >
-                              {opt.label}
-                            </button>
+                            <button key={opt.label} onClick={() => snoozeCard(currentCard.id, opt.days)} className="w-full text-left text-xs sm:text-sm text-slate-200 hover:bg-amber-500 hover:text-slate-950 px-3 py-2 rounded-lg transition font-medium">{opt.label}</button>
                           ))}
                         </div>
                       )}
@@ -552,59 +448,31 @@
             </div>
           )}
 
-          {/* SNOOZED VAULT TAB */}
           {activeTab === "snoozed" && (
             <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-800">
                 <div>
                   <h2 className="text-lg font-bold text-white">Snoozed Cards Vault</h2>
-                  <p className="text-xs text-slate-400">
-                    Cards you marked comfortable stay hidden here and automatically return when their timer expires.
-                  </p>
+                  <p className="text-xs text-slate-400">Cards you marked comfortable stay hidden here and return automatically.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setSimulatedOffsetDays((d) => d + 7)}
-                    className="text-xs bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-700 px-3 py-1.5 rounded-lg"
-                  >
-                    Simulate +1 Week
-                  </button>
-                  {simulatedOffsetDays > 0 && (
-                    <button
-                      onClick={() => setSimulatedOffsetDays(0)}
-                      className="text-xs bg-slate-800 text-slate-300 px-2.5 py-1.5 rounded-lg"
-                    >
-                      Reset Clock
-                    </button>
-                  )}
+                  <button onClick={() => setSimulatedOffsetDays((d) => d + 7)} className="text-xs bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-700 px-3 py-1.5 rounded-lg">Simulate +1 Week</button>
+                  {simulatedOffsetDays > 0 && <button onClick={() => setSimulatedOffsetDays(0)} className="text-xs bg-slate-800 text-slate-300 px-2.5 py-1.5 rounded-lg">Reset Clock</button>}
                 </div>
               </div>
-
               {snoozedCards.length === 0 ? (
-                <p className="text-sm text-slate-400 py-8 text-center">
-                  No cards are currently snoozed. Click "Comfortable — Hide / Snooze" during practice to park mastered cards here.
-                </p>
+                <p className="text-sm text-slate-400 py-8 text-center">No cards are currently snoozed.</p>
               ) : (
                 <div className="space-y-2.5">
                   {snoozedCards.map((c) => (
-                    <div
-                      key={c.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-950/70 p-3.5 rounded-xl border border-slate-800"
-                    >
+                    <div key={c.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-950/70 p-3.5 rounded-xl border border-slate-800">
                       <div>
                         <p className="text-sm font-semibold text-white">{c.en}</p>
                         <p className="text-xs text-amber-300">{c.hiRoman} · <span className="text-slate-400">{c.hiDeva}</span></p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2.5 py-1 rounded-md">
-                          {formatRemainingDays(c.snoozeUntil)}
-                        </span>
-                        <button
-                          onClick={() => restoreCard(c.id)}
-                          className="text-xs bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-200 px-3 py-1.5 rounded-lg font-medium transition"
-                        >
-                          Restore Now
-                        </button>
+                        <span className="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2.5 py-1 rounded-md">{formatRemainingDays(c.snoozeUntil)}</span>
+                        <button onClick={() => restoreCard(c.id)} className="text-xs bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-200 px-3 py-1.5 rounded-lg font-medium transition">Restore Now</button>
                       </div>
                     </div>
                   ))}
@@ -613,7 +481,6 @@
             </div>
           )}
 
-          {/* ADD CARDS TAB */}
           {activeTab === "add" && (
             <div className="space-y-6">
               <form onSubmit={handleAddSingle} className="bg-slate-900 rounded-2xl border border-slate-800 p-5 space-y-4">
@@ -621,151 +488,60 @@
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-slate-400 mb-1">English Prompt *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g., I can come tomorrow."
-                      value={newEn}
-                      onChange={(e) => setNewEn(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"
-                    />
+                    <input type="text" required placeholder="e.g., I can come tomorrow." value={newEn} onChange={(e) => setNewEn(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" />
                   </div>
                   <div>
                     <label className="block text-xs text-slate-400 mb-1">Spoken Hindi (Roman) *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g., Main kal aa sakta hoon."
-                      value={newHiRoman}
-                      onChange={(e) => setNewHiRoman(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"
-                    />
+                    <input type="text" required placeholder="e.g., Main kal aa sakta hoon." value={newHiRoman} onChange={(e) => setNewHiRoman(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Devanagari (Optional — for audio)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., मैं कल आ सकता हूँ।"
-                      value={newHiDeva}
-                      onChange={(e) => setNewHiDeva(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"
-                    />
+                    <label className="block text-xs text-slate-400 mb-1">Devanagari (Optional)</label>
+                    <input type="text" placeholder="e.g., मैं कल आ सकता हूँ।" value={newHiDeva} onChange={(e) => setNewHiDeva(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs text-slate-400 mb-1">Week Tag</label>
-                      <input
-                        type="text"
-                        value={newWeek}
-                        onChange={(e) => setNewWeek(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"
-                      />
+                      <input type="text" value={newWeek} onChange={(e) => setNewWeek(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" />
                     </div>
                     <div>
                       <label className="block text-xs text-slate-400 mb-1">Category</label>
-                      <input
-                        type="text"
-                        value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"
-                      />
+                      <input type="text" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" />
                     </div>
                   </div>
                 </div>
-                <button
-                  type="submit"
-                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm px-5 py-2.5 rounded-xl transition"
-                >
-                  + Save Card to Deck
-                </button>
+                <button type="submit" className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm px-5 py-2.5 rounded-xl transition">+ Save Card to Deck</button>
               </form>
 
-              {/* Bulk Paste */}
               <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 space-y-3">
                 <h3 className="text-base font-bold text-white">Bulk Paste Future Weeks</h3>
-                <p className="text-xs text-slate-400">
-                  Paste one card per line separated by <code className="text-amber-300">|</code> in the format: <br />
-                  <code className="text-slate-300">English | Roman Hindi | Devanagari | Week | Category</code>
-                </p>
-                <textarea
-                  rows={4}
-                  placeholder="Do you know? | Kya aapko pata hai? | क्या आपको पता है? | Week 2 | Needs & Knowledge"
-                  value={bulkText}
-                  onChange={(e) => setBulkText(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs sm:text-sm text-white font-mono"
-                />
-                <button
-                  onClick={handleBulkImport}
-                  className="bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-200 font-semibold text-xs sm:text-sm px-4 py-2 rounded-xl border border-slate-700 transition"
-                >
-                  Import Bulk Lines
-                </button>
+                <p className="text-xs text-slate-400">Format: <code className="text-slate-300">English | Roman Hindi | Devanagari | Week | Category</code></p>
+                <textarea rows={4} placeholder="Do you know? | Kya aapko pata hai? | क्या आपको पता है? | Week 2 | Knowledge" value={bulkText} onChange={(e) => setBulkText(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs sm:text-sm text-white font-mono" />
+                <button onClick={handleBulkImport} className="bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-200 font-semibold text-xs sm:text-sm px-4 py-2 rounded-xl border border-slate-700 transition">Import Bulk Lines</button>
               </div>
             </div>
           )}
 
-          {/* MANAGE ALL TAB */}
           {activeTab === "manage" && (
             <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
                 <h2 className="text-lg font-bold text-white">All Cards ({cards.length})</h2>
-                <button
-                  onClick={() => {
-                    if (confirm("Reset deck back to the original 25 Week 1 cards?")) {
-                      setCards(INITIAL_CARDS);
-                      setSimulatedOffsetDays(0);
-                    }
-                  }}
-                  className="text-xs text-rose-400 hover:underline"
-                >
-                  Reset to Default 25
-                </button>
+                <button onClick={() => { if (confirm("Reset deck back to original 25 cards?")) setCards(INITIAL_CARDS); }} className="text-xs text-rose-400 hover:underline">Reset to Default</button>
               </div>
               <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
-                {cards.map((c) => {
-                  const snoozed = isCardSnoozed(c);
-                  return (
-                    <div
-                      key={c.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-950/70 p-3 rounded-xl border border-slate-800"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">
-                            {c.week}
-                          </span>
-                          <span className="text-sm font-semibold text-white">{c.en}</span>
-                        </div>
-                        <p className="text-xs text-amber-300 mt-0.5">
-                          {c.hiRoman} <span className="text-slate-400">({c.hiDeva})</span>
-                        </p>
-                      </div>
+                {cards.map((c) => (
+                  <div key={c.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+                    <div>
                       <div className="flex items-center gap-2">
-                        {snoozed ? (
-                          <button
-                            onClick={() => restoreCard(c.id)}
-                            className="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2.5 py-1 rounded-lg"
-                          >
-                            Snoozed (Restore)
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => snoozeCard(c.id, 14)}
-                            className="text-xs bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg"
-                          >
-                            Snooze 2w
-                          </button>
-                        )}
-                        <button
-                          onClick={() => deleteCard(c.id)}
-                          className="text-xs text-rose-400 hover:bg-rose-950/60 px-2 py-1 rounded-lg"
-                        >
-                          Delete
-                        </button>
+                        <span className="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">{c.week}</span>
+                        <span className="text-sm font-semibold text-white">{c.en}</span>
                       </div>
+                      <p className="text-xs text-amber-300 mt-0.5">{c.hiRoman} <span className="text-slate-400">({c.hiDeva})</span></p>
                     </div>
-                  );
-                })}
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => deleteCard(c.id)} className="text-xs text-rose-400 hover:bg-rose-950/60 px-2 py-1 rounded-lg">Delete</button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -773,8 +549,7 @@
       );
     }
 
-    const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<App />);
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
 </body>
 </html>
