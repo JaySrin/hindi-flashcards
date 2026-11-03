@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Hindi Cards" />
+  <meta name="apple-mobile-web-app-title" content="Hindi" />
   <meta name="theme-color" content="#0f172a" />
-  <title>Spoken Hindi Flashcard Studio</title>
+  <title>Hindi</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     body {
       -webkit-tap-highlight-color: transparent;
@@ -53,19 +53,33 @@
       { id: 25, en: "No, I just need a little time.", hiRoman: "Nahi, mujhe bas thoda time chahiye.", hiDeva: "नहीं, मुझे बस थोड़ा टाइम चाहिए।", week: "Week 1", day: "Day 6", category: "Needs (Chahiye)", snoozeUntil: null, masteredCount: 0 }
     ];
 
-    const STORAGE_KEY = "spoken_hindi_flashcard_studio_v2";
+    const STORAGE_KEY = "spoken_hindi_flashcard_studio_v3";
+    const START_DATE_KEY = "spoken_hindi_start_date";
 
     function App() {
       const [cards, setCards] = useState(() => {
         try {
-          const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem("spoken_hindi_flashcard_studio_v1");
+          const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem("spoken_hindi_flashcard_studio_v2");
           return saved ? JSON.parse(saved) : INITIAL_CARDS;
         } catch (e) {
           return INITIAL_CARDS;
         }
       });
 
-      const [activeTab, setActiveTab] = useState("practice"); // practice | snoozed | manage | add
+      // Track training start date for automatic Week & Day calculation
+      const [startDate, setStartDate] = useState(() => {
+        try {
+          const savedDate = localStorage.getItem(START_DATE_KEY);
+          if (savedDate) return parseInt(savedDate, 10);
+          const now = Date.now();
+          localStorage.setItem(START_DATE_KEY, now.toString());
+          return now;
+        } catch (e) {
+          return Date.now();
+        }
+      });
+
+      const [activeTab, setActiveTab] = useState("practice");
       const [currentIndex, setCurrentIndex] = useState(0);
       const [isFlipped, setIsFlipped] = useState(false);
       const [selectedWeek, setSelectedWeek] = useState("All");
@@ -73,18 +87,13 @@
       const [showSnoozeMenu, setShowSnoozeMenu] = useState(false);
       const [simulatedOffsetDays, setSimulatedOffsetDays] = useState(0);
 
-      // Undo Snooze Banner State
       const [lastSnoozedCard, setLastSnoozedCard] = useState(null);
-
-      // 3-Second Pace Timer
       const [paceEnabled, setPaceEnabled] = useState(true);
       const [paceProgress, setPaceProgress] = useState(0);
 
-      // Pronunciation Check State
       const [isListening, setIsListening] = useState(false);
       const [speechFeedback, setSpeechFeedback] = useState("");
 
-      // Add Card Form
       const [newEn, setNewEn] = useState("");
       const [newHiRoman, setNewHiRoman] = useState("");
       const [newHiDeva, setNewHiDeva] = useState("");
@@ -104,6 +113,11 @@
       }, [cards]);
 
       const nowMs = Date.now() + simulatedOffsetDays * 86400000;
+
+      // Calculate current training week and day (1-7)
+      const daysElapsed = Math.floor((nowMs - startDate) / (1000 * 60 * 60 * 24));
+      const currentWeekNum = Math.floor(daysElapsed / 7) + 1;
+      const currentDayOfWeek = (daysElapsed % 7) + 1;
 
       const isCardSnoozed = (card) => {
         if (!card.snoozeUntil) return false;
@@ -155,10 +169,9 @@
         e.stopPropagation();
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
-          alert("Speech recognition is not supported in this browser. Try Chrome on Android or Safari on iOS/Mac.");
+          alert("Speech recognition is not supported in this browser.");
           return;
         }
-
         const recognition = new SpeechRecognition();
         recognition.lang = "hi-IN";
         recognition.interimResults = false;
@@ -172,16 +185,11 @@
           setIsListening(false);
           setSpeechFeedback(`You said: "${transcript}" — Great job practicing out loud!`);
         };
-
         recognition.onerror = () => {
           setIsListening(false);
           setSpeechFeedback("Could not catch audio clearly. Please try again.");
         };
-
-        recognition.onend = () => {
-          setIsListening(false);
-        };
-
+        recognition.onend = () => setIsListening(false);
         recognition.start();
       };
 
@@ -189,18 +197,14 @@
         setIsFlipped(false);
         setShowSnoozeMenu(false);
         setSpeechFeedback("");
-        if (activeCards.length > 0) {
-          setCurrentIndex((prev) => (prev + 1) % activeCards.length);
-        }
+        if (activeCards.length > 0) setCurrentIndex((prev) => (prev + 1) % activeCards.length);
       };
 
       const prevCard = () => {
         setIsFlipped(false);
         setShowSnoozeMenu(false);
         setSpeechFeedback("");
-        if (activeCards.length > 0) {
-          setCurrentIndex((prev) => (prev - 1 + activeCards.length) % activeCards.length);
-        }
+        if (activeCards.length > 0) setCurrentIndex((prev) => (prev - 1 + activeCards.length) % activeCards.length);
       };
 
       const shuffleDeck = () => {
@@ -214,35 +218,25 @@
       const snoozeCard = (cardId, days) => {
         const target = cards.find((c) => c.id === cardId);
         const until = days === "indefinite" ? "indefinite" : nowMs + days * 86400000;
-        setCards((prev) =>
-          prev.map((c) =>
-            c.id === cardId ? { ...c, snoozeUntil: until, masteredCount: (c.masteredCount || 0) + 1 } : c
-          )
-        );
-        if (target) {
-          setLastSnoozedCard({ id: target.id, en: target.en });
-        }
+        setCards((prev) => prev.map((c) => c.id === cardId ? { ...c, snoozeUntil: until, masteredCount: (c.masteredCount || 0) + 1 } : c));
+        if (target) setLastSnoozedCard({ id: target.id, en: target.en });
         setIsFlipped(false);
         setShowSnoozeMenu(false);
         setSpeechFeedback("");
-        if (currentIndex >= activeCards.length - 1) {
-          setCurrentIndex(0);
-        }
+        if (currentIndex >= activeCards.length - 1) setCurrentIndex(0);
       };
 
       const restoreCard = (cardId) => {
         setCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, snoozeUntil: null } : c)));
-        if (lastSnoozedCard && lastSnoozedCard.id === cardId) {
-          setLastSnoozedCard(null);
-        }
-        flashStatus("Card unsnoozed and returned to active deck!");
+        if (lastSnoozedCard && lastSnoozedCard.id === cardId) setLastSnoozedCard(null);
+        flashStatus("Card unsnoozed!");
       };
 
       const restoreAllSnoozed = () => {
         if (snoozedCards.length === 0) return;
         setCards((prev) => prev.map((c) => ({ ...c, snoozeUntil: null })));
         setLastSnoozedCard(null);
-        flashStatus("All snoozed cards restored to active deck!");
+        flashStatus("All snoozed cards restored!");
       };
 
       const handleAddSingle = (e) => {
@@ -263,7 +257,7 @@
         setNewEn("");
         setNewHiRoman("");
         setNewHiDeva("");
-        flashStatus("Added new flashcard to deck!");
+        flashStatus("Added new flashcard!");
       };
 
       const handleBulkImport = () => {
@@ -278,7 +272,7 @@
               en: parts[0],
               hiRoman: parts[1],
               hiDeva: parts[2] || parts[1],
-              week: parts[3] || "Week 2",
+              week: parts[3] || `Week ${currentWeekNum + 1}`,
               day: "Custom",
               category: parts[4] || "Custom",
               snoozeUntil: null,
@@ -289,19 +283,17 @@
         if (added.length > 0) {
           setCards((prev) => [...prev, ...added]);
           setBulkText("");
-          flashStatus(`Imported ${added.length} cards!`);
+          flashStatus(`Imported ${added.length} cards for next week!`);
         }
       };
 
-      const deleteCard = (id) => {
-        setCards((prev) => prev.filter((c) => c.id !== id));
-      };
+      const deleteCard = (id) => setCards((prev) => prev.filter((c) => c.id !== id));
 
       const exportJSON = () => {
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(cards, null, 2));
         const dlAnchor = document.createElement("a");
         dlAnchor.setAttribute("href", dataStr);
-        dlAnchor.setAttribute("download", `hindi_flashcards_backup_${new Date().toISOString().slice(0, 10)}.json`);
+        dlAnchor.setAttribute("download", `hindi_flashcards_${new Date().toISOString().slice(0, 10)}.json`);
         document.body.appendChild(dlAnchor);
         dlAnchor.click();
         dlAnchor.remove();
@@ -316,10 +308,10 @@
             const parsed = JSON.parse(event.target.result);
             if (Array.isArray(parsed)) {
               setCards(parsed);
-              flashStatus(`Restored ${parsed.length} cards from backup!`);
+              flashStatus(`Restored ${parsed.length} cards!`);
             }
           } catch (err) {
-            alert("Invalid JSON backup file.");
+            alert("Invalid JSON file.");
           }
         };
         reader.readAsText(file);
@@ -338,23 +330,63 @@
 
       return (
         <div className="max-w-3xl mx-auto px-4 py-6 pb-20">
-          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-800 pb-4 mb-6">
+          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-800 pb-4 mb-5">
             <div>
               <div className="flex items-center gap-2">
                 <span className="bg-amber-500 text-slate-950 font-bold text-xs px-2.5 py-1 rounded-full uppercase tracking-wider">15-Min Plan</span>
-                <h1 className="text-xl sm:text-2xl font-bold text-white">Spoken Hindi Flashcard Studio</h1>
+                <h1 className="text-xl sm:text-2xl font-bold text-white">Hindi</h1>
               </div>
               <p className="text-xs sm:text-sm text-slate-400 mt-1">
                 Active Deck: <strong className="text-amber-400">{activeCards.length}</strong> cards · Snoozed Vault: <strong className="text-emerald-400">{snoozedCards.length}</strong> cards
-                {simulatedOffsetDays > 0 && <span className="ml-2 text-indigo-400 font-medium">(+{simulatedOffsetDays}d simulated)</span>}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button onClick={exportJSON} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition">Export JSON</button>
-              <button onClick={() => fileInputRef.current?.click()} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition">Restore JSON</button>
+              <button onClick={exportJSON} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition">Export</button>
+              <button onClick={() => fileInputRef.current?.click()} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition">Restore</button>
               <input ref={fileInputRef} type="file" accept=".json" onChange={importJSON} className="hidden" />
             </div>
           </header>
+
+          {/* Week & Day Progress Counter Widget */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950/60 border border-slate-800 rounded-2xl p-4 mb-5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="bg-amber-500/10 border border-amber-500/40 text-amber-400 font-extrabold text-lg px-3.5 py-2 rounded-xl text-center min-w-[70px]">
+                W{currentWeekNum}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-white">Training Progress Tracker</h3>
+                  {currentDayOfWeek === 6 && (
+                    <span className="bg-rose-950 text-rose-300 border border-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">
+                      ⚡ Day 6: Prep Next Week!
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Currently on <strong className="text-amber-300">Day {currentDayOfWeek} of 7</strong> for Week {currentWeekNum}.
+                  {currentDayOfWeek === 6 && " Time to build next week's flashcards!"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <button
+                onClick={() => setSimulatedOffsetDays((d) => d + 1)}
+                className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-lg transition"
+                title="Advance simulation by 1 day"
+              >
+                +1 Day {simulatedOffsetDays > 0 && `(+${simulatedOffsetDays})`}
+              </button>
+              {simulatedOffsetDays > 0 && (
+                <button
+                  onClick={() => setSimulatedOffsetDays(0)}
+                  className="text-xs bg-rose-950 text-rose-300 border border-rose-800 px-2.5 py-1.5 rounded-lg"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
 
           {statusMsg && (
             <div className="mb-4 bg-emerald-900/60 border border-emerald-500 text-emerald-200 px-4 py-2.5 rounded-xl text-sm">
@@ -362,26 +394,12 @@
             </div>
           )}
 
-          {/* Instant Undo Banner when a card is snoozed by mistake */}
           {lastSnoozedCard && (
             <div className="mb-4 flex items-center justify-between gap-3 bg-amber-950/70 border border-amber-600/80 text-amber-200 px-4 py-2.5 rounded-xl text-xs sm:text-sm">
-              <div>
-                Snoozed: <strong className="text-white">"{lastSnoozedCard.en}"</strong>
-              </div>
+              <div>Snoozed: <strong className="text-white">"{lastSnoozedCard.en}"</strong></div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => restoreCard(lastSnoozedCard.id)}
-                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs transition"
-                >
-                  Undo Snooze
-                </button>
-                <button
-                  onClick={() => setLastSnoozedCard(null)}
-                  className="text-slate-400 hover:text-white px-1.5 py-1 text-xs"
-                  title="Dismiss"
-                >
-                  ✕
-                </button>
+                <button onClick={() => restoreCard(lastSnoozedCard.id)} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs transition">Undo Snooze</button>
+                <button onClick={() => setLastSnoozedCard(null)} className="text-slate-400 hover:text-white px-1.5 py-1 text-xs">✕</button>
               </div>
             </div>
           )}
@@ -499,7 +517,7 @@
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-800">
                 <div>
                   <h2 className="text-lg font-bold text-white">Snoozed Cards Vault</h2>
-                  <p className="text-xs text-slate-400">Tap "Unsnooze Now" on any card to immediately move it back to your Practice deck.</p>
+                  <p className="text-xs text-slate-400">Tap "Unsnooze Now" on any card to move it back to Practice.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {snoozedCards.length > 0 && (
@@ -508,7 +526,7 @@
                     </button>
                   )}
                   <button onClick={() => setSimulatedOffsetDays((d) => d + 7)} className="text-xs bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-700 px-3 py-1.5 rounded-lg">Simulate +1 Week</button>
-                  {simulatedOffsetDays > 0 && <button onClick={() => setSimulatedOffsetDays(0)} className="text-xs bg-slate-800 text-slate-300 px-2.5 py-1.5 rounded-lg">Reset Clock</button>}
+                  {simulatedOffsetDays > 0 && <button onClick={() => setSimulatedOffsetDays(0)} className="text-xs bg-slate-800 text-slate-300 px-2.5 py-1.5 rounded-lg">Reset</button>}
                 </div>
               </div>
               {snoozedCards.length === 0 ? (
